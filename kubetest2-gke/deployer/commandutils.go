@@ -18,14 +18,16 @@ package deployer
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
+	"strings"
+
+	"k8s.io/klog"
 
 	"sigs.k8s.io/kubetest2/pkg/exec"
 )
 
-func (d *deployer) prepareGcpIfNeeded() error {
+func (d *deployer) prepareGcpIfNeeded(projectID string) error {
 	// TODO(RonWeber): This is an almost direct copy/paste from kubetest's prepareGcp()
 	// It badly needs refactored.
 
@@ -45,7 +47,6 @@ func (d *deployer) prepareGcpIfNeeded() error {
 		return fmt.Errorf("--environment must be one of {test,staging,staging2,prod} or match %v, found %q", urlRe, env)
 	}
 
-	//TODO(RonWeber): boskos
 	if err := os.Setenv("CLOUDSDK_CORE_PRINT_UNHANDLED_TRACEBACKS", "1"); err != nil {
 		return fmt.Errorf("could not set CLOUDSDK_CORE_PRINT_UNHANDLED_TRACEBACKS=1: %v", err)
 	}
@@ -53,8 +54,8 @@ func (d *deployer) prepareGcpIfNeeded() error {
 		return err
 	}
 
-	if err := runWithOutput(exec.Command("gcloud", "config", "set", "project", d.project)); err != nil {
-		return fmt.Errorf("Failed to set project %s : err %v", d.project, err)
+	if err := runWithOutput(exec.Command("gcloud", "config", "set", "project", projectID)); err != nil {
+		return fmt.Errorf("Failed to set project %s : err %v", projectID, err)
 	}
 
 	// gcloud creds may have changed
@@ -62,15 +63,17 @@ func (d *deployer) prepareGcpIfNeeded() error {
 		return err
 	}
 
-	// Ensure ssh keys exist
-	log.Print("Checking existing of GCP ssh keys...")
-	k := filepath.Join(home(".ssh"), "google_compute_engine")
-	if _, err := os.Stat(k); err != nil {
-		return err
-	}
-	pk := k + ".pub"
-	if _, err := os.Stat(pk); err != nil {
-		return err
+	if d.gcpSSHKeyRequired {
+		// Ensure ssh keys exist
+		klog.V(1).Info("Checking existing of GCP ssh keys...")
+		k := filepath.Join(home(".ssh"), "google_compute_engine")
+		if _, err := os.Stat(k); err != nil {
+			return err
+		}
+		pk := k + ".pub"
+		if _, err := os.Stat(pk); err != nil {
+			return err
+		}
 	}
 
 	//TODO(RonWeber): kubemark
@@ -83,6 +86,18 @@ func activateServiceAccount(path string) error {
 		return nil
 	}
 	return runWithOutput(exec.Command("gcloud", "auth", "activate-service-account", "--key-file="+path))
+}
+
+// Get the project number for the given project ID.
+func getProjectNumber(projectID string) (string, error) {
+	// Get the service project number.
+	projectNum, err := exec.Output(exec.Command("gcloud", "projects", "describe",
+		projectID, "--format=value(projectNumber)"))
+	if err != nil {
+		return "", err
+	}
+
+	return strings.TrimSpace(string(projectNum)), nil
 }
 
 // home returns $HOME/part/part/part

@@ -56,6 +56,12 @@ type deployer struct {
 	// so that it can be explicitly closed
 	boskosHeartbeatClose chan struct{}
 
+	// instancePrefix is set for a mandatory env and for firewall rule creation
+	// see buildEnv() and nodeTag()
+	instancePrefix string
+	// network is set for firewall rule creation, see buildEnv() and firewall.go
+	network string
+
 	BoskosAcquireTimeoutSeconds int    `desc:"How long (in seconds) to hang on a request to Boskos to acquire a resource before erroring."`
 	RepoRoot                    string `desc:"The path to the root of the local kubernetes/cloud-provider-gcp repo. Necessary to call certain scripts. Defaults to the current directory. If operating in legacy mode, this should be set to the local kubernetes/kubernetes repo."`
 	GCPProject                  string `desc:"GCP Project to create VMs in. If unset, the deployer will attempt to get a project from boskos."`
@@ -65,6 +71,11 @@ type deployer struct {
 	BoskosLocation              string `desc:"If set, manually specifies the location of the boskos server. If unset and boskos is needed, defaults to http://boskos.test-pods.svc.cluster.local."`
 	LegacyMode                  bool   `desc:"Set if the provided repo root is the kubernetes/kubernetes repo and not kubernetes/cloud-provider-gcp."`
 	NumNodes                    int    `desc:"The number of nodes in the cluster."`
+
+	EnableCacheMutationDetector bool   `desc:"Sets the environment variable ENABLE_CACHE_MUTATION_DETECTOR=true during deployment. This should cause a panic if anything mutates a shared informer cache."`
+	RuntimeConfig               string `desc:"Sets the KUBE_RUNTIME_CONFIG environment variable during deployment."`
+	EnablePodSecurityPolicy     bool   `desc:"Sets the environment variable ENABLE_POD_SECURITY_POLICY=true during deployment."`
+	CreateCustomNetwork         bool   `desc:"Sets the environment variable CREATE_CUSTOM_NETWORK=true during deployment."`
 }
 
 // New implements deployer.New for gce
@@ -74,6 +85,8 @@ func New(opts types.Options) (types.Deployer, *pflag.FlagSet) {
 		kubeconfigPath:              filepath.Join(opts.ArtifactsDir(), "kubetest2-kubeconfig"),
 		logsDir:                     filepath.Join(opts.ArtifactsDir(), "cluster-logs"),
 		boskosHeartbeatClose:        make(chan struct{}),
+		instancePrefix:              "kubetest2",
+		network:                     "default",
 		BoskosAcquireTimeoutSeconds: 5 * 60,
 		BoskosLocation:              "http://boskos.test-pods.svc.cluster.local.",
 		NumNodes:                    3,
